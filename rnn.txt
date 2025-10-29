@@ -1,0 +1,252 @@
+================================================================================
+RNN.PY - CHANGES DOCUMENTATION
+================================================================================
+
+This document outlines all changes made to rnn.py, including both the 
+implementation of the RNN forward function and subsequent fixes.
+
+================================================================================
+PART 1: USER IMPLEMENTATION - Forward Function
+================================================================================
+
+The user implemented the RNN forward function (lines 32-41) as follows:
+
+    def forward(self, inputs):
+        # [to fill] obtain hidden layer representation
+        output, hidden = self.rnn(inputs)
+        
+        # [to fill] obtain output layer representations
+        z = self.W(output)
+        
+        # [to fill] sum over output 
+        z_sum = torch.sum(z, dim=0)
+        
+        # [to fill] obtain probability dist.
+        predicted_vector = self.softmax(z_sum)
+        return predicted_vector
+
+IMPLEMENTATION BREAKDOWN:
+
+1. Line 34: `output, hidden = self.rnn(inputs)`
+   - Passes the input sequence through the RNN layer
+   - Returns both the output sequence and the final hidden state
+   - The RNN processes the sequence step-by-step, maintaining hidden state
+
+2. Line 36: `z = self.W(output)`
+   - Applies a linear transformation to each time step's hidden representation
+   - W is a linear layer: nn.Linear(h, 5) where h is hidden_dim and 5 is number of classes
+   - This produces logits for each of the 5 classes at each time step
+
+3. Line 38: `z_sum = torch.sum(z, dim=0)`
+   - Sums the outputs across all time steps (dimension 0)
+   - This aggregates information from the entire sequence into a single vector
+   - The shape changes from (seq_len, batch, 5) to (batch, 5)
+
+4. Line 40: `predicted_vector = self.softmax(z_sum)`
+   - Applies LogSoftmax to obtain probability distribution over classes
+   - Note: This is actually log probabilities (due to LogSoftmax), not raw probabilities
+   - Used with NLLLoss for efficient training
+
+WHY THIS APPROACH:
+- Sequence Modeling: RNN processes text as a sequence, unlike FFNN which treats text as a bag of words
+- Temporal Aggregation: Summing over time steps captures information from the entire sequence
+- Sentiment Classification: Final logits represent overall sentiment (1-5 stars)
+
+================================================================================
+PART 2: FIXES MADE TO COMPLETE THE IMPLEMENTATION
+================================================================================
+
+After reviewing the code, several issues were identified and fixed:
+
+-------------------------------------------------------------------------------
+FIX 1: Added Random Seed Initialization (Lines 69-71)
+-------------------------------------------------------------------------------
+
+ADDED CODE:
+    # fix random seeds
+    random.seed(42)
+    torch.manual_seed(42)
+
+WHY:
+- Ensures reproducible results across runs
+- Matches the implementation pattern used in ffnn.py
+- Critical for debugging and consistent experiment results
+- The seed 42 is a common convention in machine learning
+
+BEFORE: No seed initialization
+AFTER: Seeds set before model instantiation
+
+-------------------------------------------------------------------------------
+FIX 2: Respect Epochs Argument (Line 96)
+-------------------------------------------------------------------------------
+
+BEFORE:
+    while not stopping_condition:
+    
+AFTER:
+    while not stopping_condition and epoch < args.epochs:
+
+ALSO ADDED (Lines 95, 182-183):
+    print("========== Training for up to {} epochs ==========".format(args.epochs))
+    ...
+    if epoch >= args.epochs:
+        print("Training completed: reached maximum epochs ({})".format(args.epochs))
+
+WHY:
+- The --epochs argument was being parsed but never respected
+- Without this, training could run indefinitely if early stopping didn't trigger
+- Now training stops at either:
+  1) Reaching the specified number of epochs
+  2) Early stopping due to overfitting
+- Matches the expected behavior from the command-line argument
+- Provides user feedback about why training stopped
+
+-------------------------------------------------------------------------------
+FIX 3: Removed Redundant Assignments (Lines 101, 154)
+-------------------------------------------------------------------------------
+
+BEFORE (Line 101):
+    train_data = train_data
+
+AFTER:
+    # Removed this line entirely
+
+BEFORE (Line 154):
+    valid_data = valid_data
+
+AFTER:
+    # Removed this line entirely
+
+WHY:
+- These lines did nothing (assigned a variable to itself)
+- Confusing and unnecessary
+- Cleaner code without them
+
+-------------------------------------------------------------------------------
+FIX 4: Fixed Incomplete Print Statement (Line 145)
+-------------------------------------------------------------------------------
+
+BEFORE:
+    print(loss_total/loss_count)
+    print
+    print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
+
+AFTER:
+    print(loss_total/loss_count)
+    print("Training completed for epoch {}".format(epoch + 1))
+    print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
+
+WHY:
+- There was an incomplete `print` statement with no arguments
+- This would cause a syntax/logic error
+- Added proper completion message for consistency
+
+-------------------------------------------------------------------------------
+FIX 5: Improved Early Stopping Logic (Line 172)
+-------------------------------------------------------------------------------
+
+BEFORE:
+    if validation_accuracy < last_validation_accuracy and trainning_accuracy > last_train_accuracy:
+
+AFTER:
+    if epoch > 0 and validation_accuracy < last_validation_accuracy and trainning_accuracy > last_train_accuracy:
+
+WHY:
+- On the first epoch (epoch=0), `last_validation_accuracy` and `last_train_accuracy` are 0
+- This would incorrectly trigger early stopping if validation accuracy is 0
+- Adding `epoch > 0` prevents false positive early stopping
+- Ensures at least one complete epoch of training
+
+-------------------------------------------------------------------------------
+FIX 6: Added Completion Message (Lines 182-183)
+-------------------------------------------------------------------------------
+
+ADDED CODE:
+    if epoch >= args.epochs:
+        print("Training completed: reached maximum epochs ({})".format(args.epochs))
+
+WHY:
+- Provides clear feedback when maximum epochs is reached
+- Distinguishes between stopping due to early stopping vs. max epochs
+- Better user experience and debugging
+
+================================================================================
+PART 3: SUMMARY OF OVERALL ARCHITECTURE
+================================================================================
+
+The complete RNN implementation includes:
+
+1. MODEL ARCHITECTURE (Lines 19-41):
+   - RNN layer with Tanh nonlinearity
+   - Linear output layer for 5-class classification
+   - LogSoftmax for probability distribution
+
+2. DATA PROCESSING:
+   - Loads JSON training/validation data
+   - Uses pretrained word embeddings (50 dimensions)
+   - Cleans text (removes punctuation)
+   - Handles unknown words with '<UNK>' token
+
+3. TRAINING LOOP (Lines 96-143):
+   - Mini-batch processing (batch size 16)
+   - Adam optimizer (learning rate 0.01)
+   - Gradient accumulation within mini-batches
+   - Tracks loss and accuracy
+
+4. VALIDATION LOOP (Lines 150-170):
+   - Eval mode for proper inference
+   - Processes entire validation set
+   - Computes validation accuracy
+
+5. EARLY STOPPING (Lines 172-178):
+   - Monitors overfitting
+   - Stops when validation accuracy decreases while training accuracy increases
+   - Saves best validation accuracy
+
+6. EPCH MANAGEMENT (Lines 96, 180, 182-183):
+   - Respects maximum epochs argument
+   - Provides completion messages
+   - Handles both early stopping and max epochs
+
+================================================================================
+KEY DIFFERENCES FROM FFNN.PY
+================================================================================
+
+1. SEQUENTIAL PROCESSING:
+   - RNN: Processes word-by-word sequentially, maintaining hidden state
+   - FFNN: Treats entire document as a bag-of-words vector
+
+2. EMBEDDINGS:
+   - RNN: Uses pretrained 50-dimensional word embeddings
+   - FFNN: Creates embeddings from vocabulary (one-hot encoding)
+
+3. ARCHITECTURE:
+   - RNN: RNN layer → Linear → Sum → LogSoftmax
+   - FFNN: Linear → ReLU → Linear → LogSoftmax
+
+4. OPTIMIZER:
+   - RNN: Adam optimizer
+   - FFNN: SGD with momentum
+
+5. EPOCH HANDLING:
+   - RNN: While loop with early stopping
+   - FFNN: For loop with fixed epochs
+
+================================================================================
+CONCLUSION
+================================================================================
+
+The rnn.py file is now complete and functional. The user successfully 
+implemented the core RNN forward function, and the subsequent fixes ensure:
+- Proper epoch limit handling
+- Reproducible results via random seeds
+- Correct early stopping logic
+- Clean, maintainable code
+- User feedback for training status
+
+The implementation follows the starter code structure while adding the 
+necessary logic for RNN-based sentiment classification.
+
+================================================================================
+End of Documentation
+================================================================================
