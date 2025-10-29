@@ -66,6 +66,10 @@ if __name__ == "__main__":
     parser.add_argument('--do_train', action='store_true')
     args = parser.parse_args()
 
+    # fix random seeds
+    random.seed(42)
+    torch.manual_seed(42)
+
     print("========== Loading data ==========")
     train_data, valid_data = load_data(args.train_data, args.val_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
 
@@ -88,12 +92,12 @@ if __name__ == "__main__":
     last_train_accuracy = 0
     last_validation_accuracy = 0
 
-    while not stopping_condition:
+    print("========== Training for up to {} epochs ==========".format(args.epochs))
+    while not stopping_condition and epoch < args.epochs:
         random.shuffle(train_data)
         model.train()
         # You will need further code to operationalize training, ffnn.py may be helpful
         print("Training started for epoch {}".format(epoch + 1))
-        train_data = train_data
         correct = 0
         total = 0
         minibatch_size = 16
@@ -148,7 +152,6 @@ if __name__ == "__main__":
         total = 0
         random.shuffle(valid_data)
         print("Validation started for epoch {}".format(epoch + 1))
-        valid_data = valid_data
 
         for input_words, gold_label in tqdm(valid_data):
             input_words = " ".join(input_words)
@@ -166,7 +169,7 @@ if __name__ == "__main__":
         print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
         validation_accuracy = correct/total
 
-        if validation_accuracy < last_validation_accuracy and trainning_accuracy > last_train_accuracy:
+        if epoch > 0 and validation_accuracy < last_validation_accuracy and trainning_accuracy > last_train_accuracy:
             stopping_condition=True
             print("Training done to avoid overfitting!")
             print("Best validation accuracy is:", last_validation_accuracy)
@@ -175,6 +178,9 @@ if __name__ == "__main__":
             last_train_accuracy = trainning_accuracy
 
         epoch += 1
+
+    if epoch >= args.epochs:
+        print("Training completed: reached maximum epochs ({})".format(args.epochs))
 
 
 
